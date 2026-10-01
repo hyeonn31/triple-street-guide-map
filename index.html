@@ -1,3 +1,9 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="description" content="트리플스트리트 층별 가이드맵 · QR로 현재 위치 확인 및 길 안내">
 <title>트리플스트리트 QR 가이드맵</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -22,6 +28,8 @@
   --bg:#141821; --surface:#1d2230; --surface-2:#252b3a; --line:#343b4d;
   --fg:#eef0f5; --muted:#a3abbd; --accent:#e9ecf4; --accent-fg:#141821;
   --route:#ff4a63; --route-case:#141821; --dest:#e9ecf4; --map-bg:#2a2f3c; color-scheme:dark}
+[hidden]{display:none!important}
+.admin{display:flex;flex-direction:column;gap:14px}
 html,body{height:100%}
 body{background:var(--bg);color:var(--fg);font-family:var(--body);font-size:14px;line-height:1.5;margin:0}
 *{box-sizing:border-box}
@@ -103,7 +111,12 @@ textarea.coords{width:100%;min-height:70px;margin-top:8px;font:12px/1.4 ui-monos
   .mapwrap{grid-column:1;grid-row:3}
   .sheet{grid-column:2;grid-row:2 / 4;max-height:none}
 }
+
+body{margin:0}img{max-width:100%}
 </style>
+</head>
+<body>
+
 
 <div class="app">
   <header>
@@ -137,7 +150,7 @@ textarea.coords{width:100%;min-height:70px;margin-top:8px;font:12px/1.4 ui-monos
       <ul class="list" id="results"></ul>
       <p class="note">지도에서 원하는 곳을 직접 눌러도 경로가 그려져요.</p>
     </section>
-    <div id="adminTools" hidden style="display:flex;flex-direction:column;gap:14px">
+    <div id="adminTools" class="admin" hidden>
     <p class="note" style="margin:0;font-weight:700">관리자 모드 · 고객 화면에는 보이지 않아요</p>
     <details id="qrDetails" open>
       <summary>QR 스캔 테스트 (예시 지점 5곳)</summary>
@@ -480,7 +493,7 @@ function scanQR(id){const q=QRS.find(q=>q.id===id);if(!q)return;st.dest=null;st.
 function renderLoc(){
   const s=st.start,box=$('locBox'),chip=$('hereChip').querySelector('span');
   if(!s){box.innerHTML=`<span class="dot" style="background:var(--muted)"></span><div><strong>아직 위치를 모르고 있어요</strong><p>가까운 안내 QR을 스캔하거나, 지도에서 지금 계신 곳을 눌러 주세요.</p></div>`;chip.textContent='QR을 스캔해 주세요';return;}
-  box.innerHTML=`<span class="dot"></span><div style="flex:1;min-width:0"><strong>${s.name}</strong><p>${locLabel(s.p,s.x)} · ${s.desc||''}${s.qr?' · '+s.qr.toUpperCase():''}</p></div><button class="btn" id="reStart">위치 다시 정하기</button>`;
+  box.innerHTML=`<span class="dot"></span><div style="flex:1;min-width:0"><strong>${s.name}</strong><p>${locLabel(s.p,s.x)} · ${s.desc||''}${s.qr&&ADMIN?' · '+s.qr.toUpperCase():''}</p></div><button class="btn" id="reStart">위치 다시 정하기</button>`;
   chip.textContent=s.name;
   $('reStart').onclick=()=>{st.start=null;st.dest=null;st.route=null;$('routeSec').hidden=true;renderLoc();renderTabs();draw();updateHint();};
 }
@@ -543,3 +556,6 @@ requestAnimationFrame(()=>{showPanel('1F');renderResults();renderQRPrint();
     scanQR('qr3');setDest(poiObj(POI.find(p=>p[0]==='다이소')));}
 });
 </script>
+
+</body>
+</html>
