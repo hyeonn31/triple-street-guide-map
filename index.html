@@ -152,12 +152,22 @@ body.editing .cx,body.editing .sheet-full{display:none!important}
 .nv-mode{border:0;background:transparent;color:var(--route);font-weight:800;font-size:13px;padding:4px 0}
 .nv-hint{font-size:12px;color:var(--muted)}
 body.nav .cx-top,body.nav .cx-cards{display:none}
+.cx-brand{display:flex;align-items:center;gap:10px;align-self:flex-start;padding:6px 14px 6px 8px;border-radius:14px;background:color-mix(in srgb,var(--surface) 90%,transparent);box-shadow:var(--shadow);backdrop-filter:blur(6px)}
+.cx-brand .bk{display:grid;grid-template-columns:repeat(2,13px);gap:2px}
+.cx-brand .bk i{width:13px;height:13px;border-radius:3px;font-style:normal;font-size:8.5px;font-weight:900;line-height:13px;text-align:center;color:#fff}
+.cx-brand .bk .A{background:var(--bA)}.cx-brand .bk .B{background:var(--bB);color:#1d2230}.cx-brand .bk .C{background:var(--bC)}.cx-brand .bk .D{background:var(--bD)}
+.cx-brand .bt{display:flex;flex-direction:column;line-height:1.1}
+.cx-brand small{font-size:9.5px;font-weight:800;letter-spacing:.16em;color:var(--muted)}
+.cx-brand b{font-family:var(--display);font-weight:400;font-size:19px;letter-spacing:.01em;color:var(--fg)}
+.cx-brand.mini{display:none;top:max(14px,env(safe-area-inset-top));left:var(--cx-pad);padding:8px 14px 8px 9px;gap:8px}
+.cx-brand.mini b{font-size:16px}
+body.nav .cx-brand.mini{display:flex}
 body.nav .cx-close{display:grid;place-items:center}
 body.nav .cx-nav{display:flex}
 body.nav{--cards-h:118px}
 body.nav .cx-rail,body.nav .cx-fabs{bottom:calc(var(--nav-h,170px) + 22px)}
 body:not(.nav) #fWalk{display:none}
-body:not(.editing) .toast{top:max(160px,calc(env(safe-area-inset-top) + 160px))}
+body:not(.editing) .toast{top:max(206px,calc(env(safe-area-inset-top) + 206px))}
 body.nav .toast{top:max(70px,calc(env(safe-area-inset-top) + 70px))}
 body.picking .toast{top:90px}
 
@@ -337,6 +347,7 @@ body{margin:0}img{max-width:100%}
   </div>
   <!-- ===== 고객 화면: 지도 위에 떠 있는 도구 ===== -->
   <div class="cx cx-top">
+    <div class="cx-brand" role="banner"><span class="bk" aria-hidden="true"><i class="A">A</i><i class="B">B</i><i class="C">C</i><i class="D">D</i></span><span class="bt"><small>TRIPLE STREET · SONGDO</small><b>트리플스트리트 가이드맵</b></span></div>
     <div class="cx-bar">
       <button class="cx-search" id="openSearch" aria-label="매장·시설 검색"><svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 2a7 7 0 0 0-7 7c0 5.2 7 13 7 13s7-7.8 7-13a7 7 0 0 0-7-7Zm0 9.6A2.6 2.6 0 1 1 12 6.4a2.6 2.6 0 0 1 0 5.2Z"/></svg><span>무엇을 찾고 있나요?</span></button>
       <button class="cx-adm" id="openAdmin" hidden aria-label="관리자 메뉴">관리</button>
@@ -345,6 +356,7 @@ body{margin:0}img{max-width:100%}
     <button class="cx-here" id="herePill" hidden><i></i><span></span><small>현재 위치</small></button>
   </div>
   <div class="cx cx-pick" id="pickBar" hidden><span id="pickTxt"></span><button id="pickCancel">취소</button></div>
+  <div class="cx cx-brand mini" aria-hidden="true"><span class="bk"><i class="A">A</i><i class="B">B</i><i class="C">C</i><i class="D">D</i></span><b>트리플스트리트</b></div>
   <button class="cx cx-close" id="navClose" aria-label="길 안내 끝내기">✕</button>
   <div class="cx cx-rail" id="rail" role="tablist" aria-label="층 선택"></div>
   <div class="cx cx-fabs">
@@ -843,7 +855,7 @@ function clamp(){
   const b=box(),P=PANELS[st.panel];st.s=Math.max(minS()*0.95,Math.min(4,st.s));
   const W=P.w*st.s,H=P.h*st.s;
   st.tx=W<=b.w?(b.w-W)/2:Math.min(0,Math.max(b.w-W,st.tx));
-  const pt=st.edit?0:150,pb=st.edit?0:(st.nav?(document.getElementById('navCard').offsetHeight||170):170)+16; // 고객 화면: 위 검색창·아래 카드에 가리지 않게 여유
+  const pt=st.edit?0:(st.nav?70:196),pb=st.edit?0:(st.nav?(document.getElementById('navCard').offsetHeight||170):170)+16; // 고객 화면: 위 검색창·아래 카드에 가리지 않게 여유
   st.ty=H+pt+pb<=b.h?pt+(b.h-pt-pb-H)/2:Math.min(pt,Math.max(b.h-H-pb,st.ty));
 }
 function centerOn(x,y){const b=box();st.tx=b.w/2-x*st.s;st.ty=b.h/2-y*st.s;clamp();}
@@ -1056,7 +1068,7 @@ function focusPlace(pl,o={}){
   st.focus=pl;
   if(pl.p!==st.panel){st.panel=pl.p;showPanel(pl.p);}
   const b=box(),P=PANELS[pl.p];
-  if(o.pan==='ifHidden'){const [x,y]=S(pl.x,pl.y);if(x<40||x>b.w-40||y<210||y>b.h-200){centerOn(pl.x,pl.y);st.ty-=18;clamp();}}
+  if(o.pan==='ifHidden'){const [x,y]=S(pl.x,pl.y);if(x<40||x>b.w-40||y<256||y>b.h-200){centerOn(pl.x,pl.y);st.ty-=18;clamp();}}
   else{st.s=Math.max(st.s,Math.min(b.h/P.h,1)*1.25);centerOn(pl.x,pl.y);st.ty-=18;clamp();}
   draw();markCard();
   if(o.scroll){cardsUser=false;scrollToCard(pl);}
