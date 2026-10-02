@@ -112,6 +112,21 @@ textarea.coords{width:100%;min-height:70px;margin-top:8px;font:12px/1.4 ui-monos
   .sheet{grid-column:2;grid-row:2 / 4;max-height:none}
 }
 
+.mapwrap.editing .toast{top:auto;bottom:64px}
+.edbar{position:absolute;left:10px;top:10px;right:58px;display:flex;flex-wrap:wrap;gap:5px;pointer-events:none}
+.edbar button{pointer-events:auto;border:1px solid var(--line);background:var(--surface);border-radius:9px;padding:6px 10px;font-size:12px;font-weight:800;box-shadow:0 1px 3px rgba(0,0,0,.12)}
+.edbar button[aria-pressed="true"]{background:#2563eb;border-color:#2563eb;color:#fff}
+.edbar .done{background:var(--accent);color:var(--accent-fg);border-color:var(--accent)}
+.edbar button:disabled,.btn:disabled{opacity:.45;cursor:default}
+.badge{font-size:11.5px;font-weight:800;padding:3px 9px;border-radius:999px;background:var(--surface-2);color:var(--muted)}
+.badge.warn{background:color-mix(in srgb,#f59e0b 22%,var(--surface));color:var(--fg)}
+.banner{margin-top:10px;display:flex;flex-direction:column;gap:6px;padding:10px;border-radius:10px;border:1px solid #f59e0b;background:color-mix(in srgb,#f59e0b 10%,var(--surface));font-size:12.5px;font-weight:700}
+.insp{margin-top:10px;padding:10px 12px;border-radius:10px;background:var(--surface-2);font-size:13px;word-break:break-all}
+.grp{margin-top:14px}.grp h3{margin:0 0 6px;font-size:12px;letter-spacing:.08em;color:var(--muted);font-weight:800}
+.fld{display:flex;flex-direction:column;gap:3px;font-size:12px;font-weight:700;color:var(--muted);flex:1;min-width:120px;margin-top:6px}
+.fld input,.fld select{font:inherit;font-size:13.5px;font-weight:500;color:var(--fg);background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:7px 9px;min-width:0}
+.chk{display:flex;align-items:center;gap:6px;font-size:12.5px;font-weight:700}
+details.sub{border-top:0;padding-top:6px;margin-top:6px}details.sub summary{font-size:12.5px}
 body{margin:0}img{max-width:100%}
 </style>
 </head>
@@ -133,6 +148,10 @@ body{margin:0}img{max-width:100%}
     </div>
     <div class="maphint" id="hint"></div>
     <div class="toast" id="toast"></div>
+    <div class="edbar" id="edbar" hidden role="toolbar" aria-label="경로 편집 도구">
+      <button data-m="select">선택·이동</button><button data-m="add">점 추가</button><button data-m="link">연결·끊기</button><button data-m="del">삭제</button>
+      <button id="edUndo" aria-label="되돌리기">↶</button><button id="edDone" class="done">완료</button>
+    </div>
   </div>
   <aside class="sheet" id="sheet">
     <section class="sec">
@@ -163,11 +182,40 @@ body{margin:0}img{max-width:100%}
       <input class="search" id="baseUrl" type="url" style="margin-top:8px" placeholder="https://내도메인/guide-map.html">
       <div class="qrprint" id="qrprint"></div>
     </details>
-    <details id="editDetails">
-      <summary>좌표 편집 도구 (관리자용)</summary>
-      <p class="note">켜면 통로 경로망이 보이고, 지도를 누른 위치의 좌표가 기록돼요. 새 QR 지점이나 통로를 추가할 때 이 값을 데이터에 넣으면 됩니다.</p>
-      <div class="row" style="margin-top:8px"><button class="btn" id="editToggle" aria-pressed="false">경로망 표시 켜기</button><button class="btn" id="copyCoords">좌표 복사</button></div>
-      <textarea class="coords" id="coords" readonly placeholder="편집 도구를 켜고 지도를 눌러 보세요"></textarea>
+    <details id="editDetails" open>
+      <summary>경로 편집 도구</summary>
+      <p class="note" id="routeSrc"></p>
+      <div class="row" style="margin-top:8px"><button class="btn primary" id="editToggle" aria-pressed="false">편집 켜기</button><button class="btn" id="undoBtn">되돌리기</button><span class="badge" id="dirtyBadge"></span></div>
+      <div class="banner" id="draftBanner" hidden><span>이 기기에 저장 안 한 수정본이 있어요 (<span id="draftTime"></span>)</span><span class="row"><button class="btn primary" id="draftLoad">불러오기</button><button class="btn" id="draftDrop">버리기</button></span></div>
+      <div class="insp" id="inspector"></div>
+      <div class="grp">
+        <h3>층간 이동 비용</h3>
+        <div class="row"><label class="fld">엘리베이터<input id="costEv" type="number" min="0" step="20"></label><label class="fld">에스컬레이터<input id="costEsc" type="number" min="0" step="20"></label></div>
+        <p class="note">값이 클수록 걷는 길을 더 선호해요. 지도 가로 2000 기준이라 300 ≈ 건물 한 동 정도 걷는 거리예요.</p>
+      </div>
+      <div class="grp">
+        <h3>저장</h3>
+        <label class="fld">저장소<input id="ghRepo" type="text" autocomplete="off" spellcheck="false"></label>
+        <label class="fld">GitHub 토큰<input id="ghToken" type="password" autocomplete="off" spellcheck="false" placeholder="github_pat_…"></label>
+        <div class="row"><label class="chk"><input id="ghRemember" type="checkbox"> 이 기기에 기억하기</label><button class="btn" id="ghForget">토큰 지우기</button></div>
+        <label class="fld">변경 메모<input id="ghMsg" type="text" placeholder="예: B1 다이소 앞 통로 보정"></label>
+        <div class="row" style="margin-top:8px"><button class="btn primary" id="ghSave">GitHub에 저장</button><button class="btn" id="copyJson">JSON 복사</button><button class="btn" id="dlJson">파일 받기</button></div>
+        <p class="note" id="saveStatus" aria-live="polite"></p>
+        <details class="sub"><summary>토큰 만드는 법</summary>
+          <ol class="note" style="padding-left:18px;margin:6px 0 0">
+            <li>GitHub → Settings → Developer settings → <b>Fine-grained tokens</b> → Generate new token</li>
+            <li>Repository access: <b>Only select repositories</b> → 이 저장소 하나만 선택</li>
+            <li>Permissions → Repository permissions → <b>Contents: Read and write</b> (다른 권한은 필요 없어요)</li>
+            <li>만료일을 정해 두고, 만든 토큰을 위 칸에 붙여 넣어요</li>
+          </ol>
+          <p class="note">토큰은 이 브라우저에만 보관되고 GitHub에만 전송돼요. 같이 쓰는 PC라면 "기억하기"를 끄세요.</p>
+        </details>
+      </div>
+      <details class="sub"><summary>좌표 기록</summary>
+        <p class="note">선택·이동 모드에서 빈 곳을 누르면 좌표가 기록돼요. QR 지점이나 매장 위치를 바꿀 때 써요.</p>
+        <div class="row" style="margin-top:6px"><button class="btn" id="copyCoords">좌표 복사</button></div>
+        <textarea class="coords" id="coords" readonly placeholder="편집을 켜고 빈 곳을 눌러 보세요"></textarea>
+      </details>
     </details>
     </div>
   </aside>
@@ -186,74 +234,12 @@ const PANELS={
 const ORDER=['B','1F','2F','U'];
 const TAB_ORDER=['1F','2F','B','U'];
 
-/* ---------- 통로 경로망: 노드 [패널, x, y] (지도 이미지 픽셀 좌표, 가로 2000 기준) ---------- */
-const N={
- // 1F
- f1_a0:['1F',200,265],f1_a1:['1F',330,265],f1_evA34:['1F',330,175],f1_aOut:['1F',330,300],
- f1_u0:['1F',468,263],f1_u1:['1F',625,263],f1_u1b:['1F',655,263],f1_evB56:['1F',655,205],
- f1_b1:['1F',625,300],f1_escB:['1F',655,300],f1_b2:['1F',625,370],f1_evB9:['1F',590,370],f1_u2:['1F',780,263],f1_u3:['1F',1015,263],
- f1_escC:['1F',1015,315],f1_u3b:['1F',1030,263],f1_evC1011:['1F',1030,225],f1_u4:['1F',1182,263],f1_u5:['1F',1333,263],f1_evD14:['1F',1333,222],
- f1_u6:['1F',1462,263],f1_d1:['1F',1462,352],f1_escD:['1F',1422,352],
- f1_l0:['1F',190,448],f1_a2:['1F',335,448],f1_evA1:['1F',335,510],f1_evA2:['1F',335,555],f1_escA:['1F',335,595],f1_l1:['1F',468,448],
- f1_l2:['1F',625,448],f1_l2b:['1F',683,448],f1_evB78:['1F',683,515],f1_l3:['1F',780,448],f1_l4b:['1F',1030,448],f1_evC1213:['1F',1030,510],
- f1_l5:['1F',1182,448],f1_l5b:['1F',1315,448],f1_evD2021:['1F',1315,520],f1_l6:['1F',1462,448],f1_l7:['1F',1692,448],f1_l7b:['1F',1725,448],
- f1_evD2325:['1F',1725,505],f1_l8:['1F',1765,448],f1_d2:['1F',1692,300],f1_d3:['1F',1692,200],f1_evD1519:['1F',1720,200],
- // 2F
- f2_u0:['2F',160,271],f2_u1:['2F',300,271],f2_evA34:['2F',300,180],f2_u2:['2F',448,271],f2_u3:['2F',625,271],f2_u3b:['2F',668,271],f2_evB56:['2F',668,215],
- f2_b1:['2F',625,313],f2_escB:['2F',638,313],f2_u4:['2F',768,271],f2_u5b:['2F',987,271],f2_u5:['2F',1018,271],f2_evC1011:['2F',1018,215],f2_escC:['2F',987,312],
- f2_u6:['2F',1175,271],f2_u7:['2F',1340,271],f2_evD14:['2F',1340,228],f2_u8:['2F',1710,271],f2_escD:['2F',1710,305],
- f2_l0:['2F',160,464],f2_l0b:['2F',326,464],f2_a3:['2F',326,600],f2_evA2:['2F',352,590],f2_a4:['2F',226,612],f2_escA:['2F',225,632],f2_l1:['2F',448,464],f2_l2:['2F',625,464],
- f2_l3:['2F',768,464],f2_l4:['2F',1175,464],f2_l5:['2F',1298,464],f2_evD21:['2F',1298,515],f2_l6:['2F',1790,464],f2_evD2325:['2F',1820,520],
- f2_m:['2F',1795,345],f2_evD1517:['2F',1795,235],
- // B1-B3
- fb_a0:['B',110,421],fb_n0:['B',300,421],fb_a1:['B',300,330],fb_evA34:['B',305,240],fb_escA:['B',232,310],fb_a2:['B',312,470],fb_a3:['B',312,625],
- fb_evA1:['B',343,650],fb_n1:['B',420,421],fb_n2:['B',645,421],fb_b1:['B',645,290],fb_evB56:['B',618,262],fb_b2:['B',645,545],fb_evB78:['B',625,568],fb_n3:['B',760,421],
- fb_n4:['B',978,421],fb_c1:['B',978,290],fb_evC1011:['B',970,262],fb_c2:['B',978,545],fb_evC1213:['B',1010,568],fb_n5:['B',1075,421],fb_n6:['B',1180,421],
- fb_n7:['B',1360,421],fb_n7d:['B',1385,421],fb_d3:['B',1385,545],fb_evD2021:['B',1425,565],fb_n7b:['B',1410,421],fb_evD14:['B',1410,320],fb_n8:['B',1560,421],
- fb_n9:['B',1748,421],fb_d1:['B',1748,300],fb_evD1517:['B',1785,282],fb_d4:['B',1748,490],fb_d2:['B',1760,550],fb_evD2325:['B',1820,570],
- // 3-6F (골든파크 연결부는 y≈260)
- fu_a0:['U',349,500],fu_a1:['U',349,260],fu_evA4:['U',282,215],fu_b0:['U',440,260],fu_b2:['U',440,325],fu_evB9:['U',462,325],fu_b1:['U',640,260],
- fu_c0:['U',700,260],fu_c1:['U',947,260],fu_evC11:['U',947,232],fu_d0:['U',1060,260],fu_d1:['U',1075,336],fu_mega:['U',1150,336],fu_escD:['U',1240,304],
- f5_esc:['U',1474,341],f5_a:['U',1474,265],f5_ev:['U',1500,232],
- f6_ev1:['U',1745,232],f6_a:['U',1720,290],f6_b:['U',1720,400],f6_ev2:['U',1745,440]
-};
-const CHAINS=[
- ['f1_a0','f1_a1','f1_aOut','f1_a2'],['f1_a1','f1_evA34'],
- ['f1_u0','f1_u1','f1_u1b','f1_u2','f1_u3','f1_u3b','f1_u4','f1_u5','f1_u6'],['f1_u0','f1_l1'],
- ['f1_u1','f1_b1','f1_b2','f1_l2'],['f1_b1','f1_escB'],['f1_u1b','f1_evB56'],['f1_b2','f1_evB9'],['f1_u2','f1_l3'],['f1_u3','f1_escC'],
- ['f1_u3b','f1_evC1011'],['f1_u4','f1_l5'],['f1_u5','f1_evD14'],['f1_u6','f1_d1','f1_l6'],['f1_d1','f1_escD'],
- ['f1_l0','f1_a2','f1_l1','f1_l2','f1_l2b','f1_l3','f1_l4b','f1_l5','f1_l5b','f1_l6','f1_l7','f1_l7b','f1_l8'],
- ['f1_a2','f1_evA1','f1_evA2','f1_escA'],['f1_l2b','f1_evB78'],['f1_l4b','f1_evC1213'],['f1_l5b','f1_evD2021'],
- ['f1_l7','f1_d2','f1_d3','f1_evD1519'],['f1_l7b','f1_evD2325'],
- ['f2_u0','f2_u1','f2_u2','f2_u3','f2_u3b','f2_u4','f2_u5b','f2_u5','f2_u6','f2_u7','f2_u8'],['f2_u1','f2_evA34'],['f2_u3b','f2_evB56'],['f2_u3','f2_b1','f2_l2'],
- ['f2_b1','f2_escB'],['f2_u5','f2_evC1011'],['f2_u5b','f2_escC'],['f2_u7','f2_evD14'],['f2_u8','f2_escD'],['f2_u2','f2_l1'],['f2_u4','f2_l3'],
- ['f2_u6','f2_l4'],['f2_l0','f2_l0b','f2_l1','f2_l2','f2_l3','f2_l4','f2_l5','f2_l6'],['f2_l0b','f2_a3','f2_evA2'],['f2_a3','f2_a4','f2_escA'],['f2_l5','f2_evD21'],
- ['f2_l6','f2_evD2325'],['f2_l6','f2_m','f2_evD1517'],
- ['fb_a0','fb_n0','fb_n1','fb_n2','fb_n3','fb_n4','fb_n5','fb_n6','fb_n7','fb_n7d','fb_n7b','fb_n8','fb_n9'],
- ['fb_n0','fb_a1','fb_evA34'],['fb_a1','fb_escA'],['fb_n0','fb_a2','fb_a3','fb_evA1'],['fb_n2','fb_b1','fb_evB56'],['fb_n2','fb_b2','fb_evB78'],
- ['fb_n4','fb_c1','fb_evC1011'],['fb_n4','fb_c2','fb_evC1213'],['fb_n7b','fb_evD14'],['fb_n7d','fb_d3','fb_evD2021'],['fb_n9','fb_d1','fb_evD1517'],['fb_n9','fb_d4','fb_d2','fb_evD2325'],
- ['fu_a0','fu_a1','fu_b0','fu_b1','fu_c0','fu_c1','fu_d0','fu_d1','fu_mega','fu_escD'],['fu_c1','fu_evC11'],['fu_a1','fu_evA4'],['fu_b0','fu_b2','fu_evB9'],
- ['f5_esc','f5_a','f5_ev'],['f6_ev1','f6_a','f6_b','f6_ev2']
-];
-/* 층간 이동 수단: 같은 그룹의 노드끼리 서로 연결됨 */
-const LIFTS=[
- {id:'A-EV34',name:'A동 3·4호기 엘리베이터',type:'ev',m:['f1_evA34','f2_evA34','fb_evA34','fu_evA4']},
- {id:'A-EV1',name:'A동 1호기 엘리베이터',type:'ev',m:['f1_evA1','fb_evA1']},
- {id:'A-EV2',name:'A동 2호기 엘리베이터',type:'ev',m:['f1_evA2','f2_evA2']},
- {id:'A-ESC',name:'A동 에스컬레이터',type:'esc',m:['fb_escA','f1_escA','f2_escA']},
- {id:'B-EV56',name:'B동 5·6호기 엘리베이터',type:'ev',m:['f1_evB56','f2_evB56','fb_evB56']},
- {id:'B-EV78',name:'B동 7·8호기 엘리베이터',type:'ev',m:['f1_evB78','fb_evB78']},
- {id:'B-EV9',name:'B동 9호기 엘리베이터',type:'ev',m:['f1_evB9','fu_evB9']},
- {id:'B-ESC',name:'B동 에스컬레이터',type:'esc',m:['f1_escB','f2_escB']},
- {id:'C-EV1011',name:'C동 10·11호기 엘리베이터',type:'ev',m:['f1_evC1011','f2_evC1011','fb_evC1011','fu_evC11']},
- {id:'C-EV1213',name:'C동 12·13호기 엘리베이터',type:'ev',m:['f1_evC1213','fb_evC1213']},
- {id:'C-ESC',name:'C동 에스컬레이터',type:'esc',m:['fb_n5','f1_escC','f2_escC']},
- {id:'D-EV14',name:'D동 14호기 엘리베이터',type:'ev',m:['f1_evD14','f2_evD14','fb_evD14']},
- {id:'D-EV1519',name:'D동 15~19호기 엘리베이터',type:'ev',m:['f1_evD1519','f2_evD1517','fb_evD1517','f5_ev','f6_ev1']},
- {id:'D-EV2021',name:'D동 20·21호기 엘리베이터',type:'ev',m:['f1_evD2021','f2_evD21','fb_evD2021']},
- {id:'D-EV2325',name:'D동 23~25호기 엘리베이터',type:'ev',m:['f1_evD2325','f2_evD2325','fb_evD2325','f6_ev2']},
- {id:'D-ESC',name:'D동 에스컬레이터',type:'esc',m:['fb_n7','f1_escD','f2_escD','fu_escD','f5_esc']}
-];
+/* ---------- 통로 경로망 ----------
+   실제 데이터는 같은 폴더의 routes.json 이에요. 관리자 화면(#admin)의 "경로 편집 도구"로 고치고 저장하세요.
+   nodes: 점 {id: [탭, x, y]} · edges: 통로 [점, 점, 추가비용?] · lifts: 층간 이동수단 · costs: 층간 이동 비용
+   아래 ROUTES_FALLBACK 은 routes.json 을 불러오지 못할 때(파일을 직접 열었을 때 등)만 쓰는 예비본이에요. */
+const ROUTES_FALLBACK={"version":1,"updated":"2026-10-02T00:00:00.000Z","note":"트리플스트리트 가이드맵 통로 경로망. 관리자 화면(#admin)의 경로 편집 도구로 고치고 저장하세요. 좌표는 지도 이미지 가로 2000px 기준 픽셀이에요.","costs":{"ev":320,"esc":240},"nodes":{"f1_a0":["1F",200,265],"f1_a1":["1F",330,265],"f1_evA34":["1F",330,175],"f1_aOut":["1F",330,300],"f1_u0":["1F",468,263],"f1_u1":["1F",625,263],"f1_u1b":["1F",655,263],"f1_evB56":["1F",655,205],"f1_b1":["1F",625,300],"f1_escB":["1F",655,300],"f1_b2":["1F",625,370],"f1_evB9":["1F",590,370],"f1_u2":["1F",780,263],"f1_u3":["1F",1015,263],"f1_escC":["1F",1015,315],"f1_u3b":["1F",1030,263],"f1_evC1011":["1F",1030,225],"f1_u4":["1F",1182,263],"f1_u5":["1F",1333,263],"f1_evD14":["1F",1333,222],"f1_u6":["1F",1462,263],"f1_d1":["1F",1462,352],"f1_escD":["1F",1422,352],"f1_l0":["1F",190,448],"f1_a2":["1F",335,448],"f1_evA1":["1F",335,510],"f1_evA2":["1F",335,555],"f1_escA":["1F",335,595],"f1_l1":["1F",468,448],"f1_l2":["1F",625,448],"f1_l2b":["1F",683,448],"f1_evB78":["1F",683,515],"f1_l3":["1F",780,448],"f1_l4b":["1F",1030,448],"f1_evC1213":["1F",1030,510],"f1_l5":["1F",1182,448],"f1_l5b":["1F",1315,448],"f1_evD2021":["1F",1315,520],"f1_l6":["1F",1462,448],"f1_l7":["1F",1692,448],"f1_l7b":["1F",1725,448],"f1_evD2325":["1F",1725,505],"f1_l8":["1F",1765,448],"f1_d2":["1F",1692,300],"f1_d3":["1F",1692,200],"f1_evD1519":["1F",1720,200],"f2_u0":["2F",160,271],"f2_u1":["2F",300,271],"f2_evA34":["2F",300,180],"f2_u2":["2F",448,271],"f2_u3":["2F",625,271],"f2_u3b":["2F",668,271],"f2_evB56":["2F",668,215],"f2_b1":["2F",625,313],"f2_escB":["2F",638,313],"f2_u4":["2F",768,271],"f2_u5b":["2F",987,271],"f2_u5":["2F",1018,271],"f2_evC1011":["2F",1018,215],"f2_escC":["2F",987,312],"f2_u6":["2F",1175,271],"f2_u7":["2F",1340,271],"f2_evD14":["2F",1340,228],"f2_u8":["2F",1710,271],"f2_escD":["2F",1710,305],"f2_l0":["2F",160,464],"f2_l0b":["2F",326,464],"f2_a3":["2F",326,600],"f2_evA2":["2F",352,590],"f2_a4":["2F",226,612],"f2_escA":["2F",225,632],"f2_l1":["2F",448,464],"f2_l2":["2F",625,464],"f2_l3":["2F",768,464],"f2_l4":["2F",1175,464],"f2_l5":["2F",1298,464],"f2_evD21":["2F",1298,515],"f2_l6":["2F",1790,464],"f2_evD2325":["2F",1820,520],"f2_m":["2F",1795,345],"f2_evD1517":["2F",1795,235],"fb_a0":["B",110,421],"fb_n0":["B",300,421],"fb_a1":["B",300,330],"fb_evA34":["B",305,240],"fb_escA":["B",232,310],"fb_a2":["B",312,470],"fb_a3":["B",312,625],"fb_evA1":["B",343,650],"fb_n1":["B",420,421],"fb_n2":["B",645,421],"fb_b1":["B",645,290],"fb_evB56":["B",618,262],"fb_b2":["B",645,545],"fb_evB78":["B",625,568],"fb_n3":["B",760,421],"fb_n4":["B",978,421],"fb_c1":["B",978,290],"fb_evC1011":["B",970,262],"fb_c2":["B",978,545],"fb_evC1213":["B",1010,568],"fb_n5":["B",1075,421],"fb_n6":["B",1180,421],"fb_n7":["B",1360,421],"fb_n7d":["B",1385,421],"fb_d3":["B",1385,545],"fb_evD2021":["B",1425,565],"fb_n7b":["B",1410,421],"fb_evD14":["B",1410,320],"fb_n8":["B",1560,421],"fb_n9":["B",1748,421],"fb_d1":["B",1748,300],"fb_evD1517":["B",1785,282],"fb_d4":["B",1748,490],"fb_d2":["B",1760,550],"fb_evD2325":["B",1820,570],"fu_a0":["U",349,500],"fu_a1":["U",349,260],"fu_evA4":["U",282,215],"fu_b0":["U",440,260],"fu_b2":["U",440,325],"fu_evB9":["U",462,325],"fu_b1":["U",640,260],"fu_c0":["U",700,260],"fu_c1":["U",947,260],"fu_evC11":["U",947,232],"fu_d0":["U",1060,260],"fu_d1":["U",1075,336],"fu_mega":["U",1150,336],"fu_escD":["U",1240,304],"f5_esc":["U",1474,341],"f5_a":["U",1474,265],"f5_ev":["U",1500,232],"f6_ev1":["U",1745,232],"f6_a":["U",1720,290],"f6_b":["U",1720,400],"f6_ev2":["U",1745,440]},"edges":[["f1_a0","f1_a1"],["f1_a1","f1_aOut"],["f1_aOut","f1_a2"],["f1_a1","f1_evA34"],["f1_u0","f1_u1"],["f1_u1","f1_u1b"],["f1_u1b","f1_u2"],["f1_u2","f1_u3"],["f1_u3","f1_u3b"],["f1_u3b","f1_u4"],["f1_u4","f1_u5"],["f1_u5","f1_u6"],["f1_u0","f1_l1"],["f1_u1","f1_b1"],["f1_b1","f1_b2"],["f1_b2","f1_l2"],["f1_b1","f1_escB"],["f1_u1b","f1_evB56"],["f1_b2","f1_evB9"],["f1_u2","f1_l3"],["f1_u3","f1_escC"],["f1_u3b","f1_evC1011"],["f1_u4","f1_l5"],["f1_u5","f1_evD14"],["f1_u6","f1_d1"],["f1_d1","f1_l6"],["f1_d1","f1_escD"],["f1_l0","f1_a2"],["f1_a2","f1_l1"],["f1_l1","f1_l2"],["f1_l2","f1_l2b"],["f1_l2b","f1_l3"],["f1_l3","f1_l4b"],["f1_l4b","f1_l5"],["f1_l5","f1_l5b"],["f1_l5b","f1_l6"],["f1_l6","f1_l7"],["f1_l7","f1_l7b"],["f1_l7b","f1_l8"],["f1_a2","f1_evA1"],["f1_evA1","f1_evA2"],["f1_evA2","f1_escA"],["f1_l2b","f1_evB78"],["f1_l4b","f1_evC1213"],["f1_l5b","f1_evD2021"],["f1_l7","f1_d2"],["f1_d2","f1_d3"],["f1_d3","f1_evD1519"],["f1_l7b","f1_evD2325"],["f2_u0","f2_u1"],["f2_u1","f2_u2"],["f2_u2","f2_u3"],["f2_u3","f2_u3b"],["f2_u3b","f2_u4"],["f2_u4","f2_u5b"],["f2_u5b","f2_u5"],["f2_u5","f2_u6"],["f2_u6","f2_u7"],["f2_u7","f2_u8"],["f2_u1","f2_evA34"],["f2_u3b","f2_evB56"],["f2_u3","f2_b1"],["f2_b1","f2_l2"],["f2_b1","f2_escB"],["f2_u5","f2_evC1011"],["f2_u5b","f2_escC"],["f2_u7","f2_evD14"],["f2_u8","f2_escD"],["f2_u2","f2_l1"],["f2_u4","f2_l3"],["f2_u6","f2_l4"],["f2_l0","f2_l0b"],["f2_l0b","f2_l1"],["f2_l1","f2_l2"],["f2_l2","f2_l3"],["f2_l3","f2_l4"],["f2_l4","f2_l5"],["f2_l5","f2_l6"],["f2_l0b","f2_a3"],["f2_a3","f2_evA2"],["f2_a3","f2_a4"],["f2_a4","f2_escA"],["f2_l5","f2_evD21"],["f2_l6","f2_evD2325"],["f2_l6","f2_m"],["f2_m","f2_evD1517"],["fb_a0","fb_n0"],["fb_n0","fb_n1"],["fb_n1","fb_n2"],["fb_n2","fb_n3"],["fb_n3","fb_n4"],["fb_n4","fb_n5"],["fb_n5","fb_n6"],["fb_n6","fb_n7"],["fb_n7","fb_n7d"],["fb_n7d","fb_n7b"],["fb_n7b","fb_n8"],["fb_n8","fb_n9"],["fb_n0","fb_a1"],["fb_a1","fb_evA34"],["fb_a1","fb_escA"],["fb_n0","fb_a2"],["fb_a2","fb_a3"],["fb_a3","fb_evA1"],["fb_n2","fb_b1"],["fb_b1","fb_evB56"],["fb_n2","fb_b2"],["fb_b2","fb_evB78"],["fb_n4","fb_c1"],["fb_c1","fb_evC1011"],["fb_n4","fb_c2"],["fb_c2","fb_evC1213"],["fb_n7b","fb_evD14"],["fb_n7d","fb_d3"],["fb_d3","fb_evD2021"],["fb_n9","fb_d1"],["fb_d1","fb_evD1517"],["fb_n9","fb_d4"],["fb_d4","fb_d2"],["fb_d2","fb_evD2325"],["fu_a0","fu_a1"],["fu_a1","fu_b0"],["fu_b0","fu_b1"],["fu_b1","fu_c0"],["fu_c0","fu_c1"],["fu_c1","fu_d0"],["fu_d0","fu_d1"],["fu_d1","fu_mega"],["fu_mega","fu_escD"],["fu_c1","fu_evC11"],["fu_a1","fu_evA4"],["fu_b0","fu_b2"],["fu_b2","fu_evB9"],["f5_esc","f5_a"],["f5_a","f5_ev"],["f6_ev1","f6_a"],["f6_a","f6_b"],["f6_b","f6_ev2"]],"lifts":[{"id":"A-EV34","name":"A동 3·4호기 엘리베이터","type":"ev","m":["f1_evA34","f2_evA34","fb_evA34","fu_evA4"]},{"id":"A-EV1","name":"A동 1호기 엘리베이터","type":"ev","m":["f1_evA1","fb_evA1"]},{"id":"A-EV2","name":"A동 2호기 엘리베이터","type":"ev","m":["f1_evA2","f2_evA2"]},{"id":"A-ESC","name":"A동 에스컬레이터","type":"esc","m":["fb_escA","f1_escA","f2_escA"]},{"id":"B-EV56","name":"B동 5·6호기 엘리베이터","type":"ev","m":["f1_evB56","f2_evB56","fb_evB56"]},{"id":"B-EV78","name":"B동 7·8호기 엘리베이터","type":"ev","m":["f1_evB78","fb_evB78"]},{"id":"B-EV9","name":"B동 9호기 엘리베이터","type":"ev","m":["f1_evB9","fu_evB9"]},{"id":"B-ESC","name":"B동 에스컬레이터","type":"esc","m":["f1_escB","f2_escB"]},{"id":"C-EV1011","name":"C동 10·11호기 엘리베이터","type":"ev","m":["f1_evC1011","f2_evC1011","fb_evC1011","fu_evC11"]},{"id":"C-EV1213","name":"C동 12·13호기 엘리베이터","type":"ev","m":["f1_evC1213","fb_evC1213"]},{"id":"C-ESC","name":"C동 에스컬레이터","type":"esc","m":["fb_n5","f1_escC","f2_escC"]},{"id":"D-EV14","name":"D동 14호기 엘리베이터","type":"ev","m":["f1_evD14","f2_evD14","fb_evD14"]},{"id":"D-EV1519","name":"D동 15~19호기 엘리베이터","type":"ev","m":["f1_evD1519","f2_evD1517","fb_evD1517","f5_ev","f6_ev1"]},{"id":"D-EV2021","name":"D동 20·21호기 엘리베이터","type":"ev","m":["f1_evD2021","f2_evD21","fb_evD2021"]},{"id":"D-EV2325","name":"D동 23~25호기 엘리베이터","type":"ev","m":["f1_evD2325","f2_evD2325","fb_evD2325","f6_ev2"]},{"id":"D-ESC","name":"D동 에스컬레이터","type":"esc","m":["fb_n7","f1_escD","f2_escD","fu_escD","f5_esc"]}]};
+let RT=null,N={},LIFTS=[],COSTS={ev:320,esc:240};
 /* QR 예시 지점 */
 const QRS=[
  // 1F
@@ -544,13 +530,19 @@ function floorOf(p,x){
 const locLabel=(p,x)=>`${bld(p,x)}동 ${floorOf(p,x)}`;
 
 /* ---------- 그래프 ---------- */
-const ADJ={};const EDGES=[];const isLift={};
+let ADJ={},EDGES=[],isLift={};
 const dist=(a,b)=>Math.hypot(a[0]-b[0],a[1]-b[1]);
 const xy=id=>[N[id][1],N[id][2]];
 function addEdge(a,b,w,lift){(ADJ[a]=ADJ[a]||[]).push([b,w,lift]);(ADJ[b]=ADJ[b]||[]).push([a,w,lift]);}
-CHAINS.forEach(c=>{for(let i=1;i<c.length;i++){const a=c[i-1],b=c[i];addEdge(a,b,dist(xy(a),xy(b)));EDGES.push([a,b]);}});
-/* 엘리베이터: 운행층끼리 바로 연결 · 에스컬레이터: 아래층→위층 순서로 한 층씩만 연결 (m 배열을 층 순서로 적을 것) */
-LIFTS.forEach(L=>{L.m.forEach(id=>isLift[id]=L);for(let i=0;i<L.m.length;i++)for(let j=i+1;j<L.m.length;j++){if(L.type==='esc'&&j>i+1)break;addEdge(L.m[i],L.m[j],L.type==='ev'?320:240,L);}});
+/* routes.json → 경로 계산용 그래프. 통로 비용 = 실제 길이 + 추가 비용(edges의 세 번째 값).
+   엘리베이터: 운행층끼리 바로 연결 · 에스컬레이터: 아래층→위층 순서로 한 층씩만 연결 (lifts의 m 배열을 층 순서로 적을 것) */
+function buildGraph(){
+  N=RT.nodes;LIFTS=RT.lifts;COSTS=Object.assign({ev:320,esc:240},RT.costs);
+  ADJ={};EDGES=[];isLift={};
+  RT.edges.forEach(([a,b,pen])=>{if(!N[a]||!N[b])return;pen=+pen||0;addEdge(a,b,dist(xy(a),xy(b))+pen);EDGES.push([a,b,pen]);});
+  LIFTS.forEach(L=>{L.m=L.m.filter(id=>N[id]);L.m.forEach(id=>isLift[id]=L);
+    for(let i=0;i<L.m.length;i++)for(let j=i+1;j<L.m.length;j++){if(L.type==='esc'&&j>i+1)break;addEdge(L.m[i],L.m[j],L.type==='ev'?COSTS.ev:COSTS.esc,L);}});
+}
 
 function snap(p,x,y){
   let best=null;
@@ -654,14 +646,19 @@ $('zout').onclick=()=>{const b=box();zoomAt(1/1.35,b.w/2,b.h/2);};
 $('zfit').onclick=()=>{st.s=minS();clamp();draw();};
 
 const ptrs=new Map();let gesture=null;
+const toWorld=(cx,cy)=>{const b=box();return [(cx-b.l-st.tx)/st.s,(cy-b.t-st.ty)/st.s];};
 svg.addEventListener('pointerdown',e=>{svg.setPointerCapture(e.pointerId);ptrs.set(e.pointerId,{x:e.clientX,y:e.clientY});
-  gesture={moved:0,t:Date.now(),multi:ptrs.size>1,x:e.clientX,y:e.clientY};});
+  gesture={moved:0,t:Date.now(),multi:ptrs.size>1,x:e.clientX,y:e.clientY};
+  if(st.edit&&ED.mode==='select'&&ptrs.size===1){const b=box();const n=nodeAt(e.clientX-b.l,e.clientY-b.t);if(n){gesture.drag=n;gesture.snap=JSON.stringify(RT);}}});
 svg.addEventListener('pointermove',e=>{if(!ptrs.has(e.pointerId))return;const p=ptrs.get(e.pointerId);
+  if(ptrs.size===1&&gesture&&gesture.drag){gesture.moved+=Math.abs(e.clientX-p.x)+Math.abs(e.clientY-p.y);p.x=e.clientX;p.y=e.clientY;
+    if(gesture.moved>=8){const [wx,wy]=toWorld(e.clientX,e.clientY);N[gesture.drag][1]=Math.round(wx);N[gesture.drag][2]=Math.round(wy);ED.sel=gesture.drag;buildGraph();draw();}return;}
   if(ptrs.size===1){const dx=e.clientX-p.x,dy=e.clientY-p.y;st.tx+=dx;st.ty+=dy;gesture.moved+=Math.abs(dx)+Math.abs(dy);clamp();draw();}
   else if(ptrs.size===2){const [a,b]=[...ptrs.values()];const other=a===p?b:a;const d0=Math.hypot(p.x-other.x,p.y-other.y);
     const d1=Math.hypot(e.clientX-other.x,e.clientY-other.y);const bx=box();zoomAt(d1/d0,(e.clientX+other.x)/2-bx.l,(e.clientY+other.y)/2-bx.t);gesture.multi=true;}
   p.x=e.clientX;p.y=e.clientY;});
 function endPtr(e){if(!ptrs.has(e.pointerId))return;ptrs.delete(e.pointerId);
+  if(gesture&&gesture.drag&&gesture.moved>=8){ED.hist.push(gesture.snap);if(ED.hist.length>60)ED.hist.shift();changed();gesture=null;return;}
   if(ptrs.size===0&&gesture&&!gesture.multi&&gesture.moved<8&&Date.now()-gesture.t<600){const b=box();tap(e.clientX-b.l,e.clientY-b.t);}
   if(ptrs.size===0)gesture=null;}
 svg.addEventListener('pointerup',endPtr);svg.addEventListener('pointercancel',endPtr);
@@ -672,7 +669,7 @@ window.addEventListener('resize',()=>{clamp();draw();});
 let hits=[];
 function tap(sx,sy){
   const wx=(sx-st.tx)/st.s,wy=(sy-st.ty)/st.s;
-  if(st.edit){const line=`['${st.panel}', ${Math.round(wx)}, ${Math.round(wy)}]  // ${locLabel(st.panel,wx)}`;st.coords.unshift(line);$('coords').value=st.coords.slice(0,30).join('\n');toast('좌표 기록: '+Math.round(wx)+', '+Math.round(wy));return;}
+  if(st.edit){editTap(sx,sy,wx,wy);return;}
   const h=hits.find(h=>Math.hypot(h.x-sx,h.y-sy)<h.r);
   if(h){h.fn();return;}
   if(wx<0||wy<0||wx>PANELS[st.panel].w||wy>PANELS[st.panel].h)return;
@@ -687,8 +684,12 @@ function draw(){
   overlay.innerHTML='';hits=[];
   const cs=getComputedStyle(document.documentElement);const C=n=>cs.getPropertyValue(n).trim();
   if(st.edit){
-    EDGES.forEach(([a,b])=>{if(N[a][0]!==st.panel)return;const A=S(...xy(a)),B=S(...xy(b));el('line',{x1:A[0],y1:A[1],x2:B[0],y2:B[1],stroke:'#2563eb','stroke-width':2,'stroke-opacity':.7},overlay);});
-    Object.keys(N).forEach(id=>{if(N[id][0]!==st.panel)return;const [x,y]=S(...xy(id));el('circle',{cx:x,cy:y,r:isLift[id]?6:4,fill:isLift[id]?'#f59e0b':'#2563eb',stroke:'#fff','stroke-width':1.5},overlay);});
+    RT.edges.forEach(([a,b,pen],i)=>{if(!N[a]||!N[b]||N[a][0]!==st.panel||N[b][0]!==st.panel)return;const A=S(...xy(a)),B=S(...xy(b));const sel=i===ED.selEdge;
+      const at={x1:A[0],y1:A[1],x2:B[0],y2:B[1],stroke:sel?'#e6304a':pen?'#f59e0b':'#2563eb','stroke-width':sel?6:pen?4:3,'stroke-opacity':sel?1:.8,'stroke-linecap':'round'};if(pen&&!sel)at['stroke-dasharray']='8 5';el('line',at,overlay);});
+    Object.keys(N).forEach(id=>{if(N[id][0]!==st.panel)return;const [x,y]=S(...xy(id));const on=id===ED.sel||id===ED.first;
+      if(on)el('circle',{cx:x,cy:y,r:13,fill:'none',stroke:id===ED.first?'#16a34a':'#e6304a','stroke-width':3},overlay);
+      el('circle',{cx:x,cy:y,r:isLift[id]?7:5.5,fill:id===ED.first?'#16a34a':isLift[id]?'#f59e0b':'#2563eb',stroke:'#fff','stroke-width':2},overlay);
+      if(on)labelBubble(el('g',{transform:`translate(${x} ${y})`},overlay),id+(isLift[id]?' · '+isLift[id].name:''),-18,'#1d2230','#fff');});
   }
   // 분류 선택 시 매장 점
   if(st.cat!=='all'){POI.filter(p=>p[1]===st.panel&&p[4]===st.cat).forEach(p=>{const [x,y]=S(p[2],p[3]);
@@ -760,6 +761,7 @@ $('clearRoute').onclick=()=>{st.dest=null;st.route=null;$('routeSec').hidden=tru
 function updateHint(){
   const h=$('hint');const P=PANELS[st.panel];
   let msg=P.title;
+  if(st.edit){h.textContent=MODE_HELP[ED.mode];return;}
   if(st.route&&!st.route.segs.some(s=>s.p===st.panel))msg+=' · 이 층에는 경로가 없어요';
   else if(st.route&&st.partial)msg+=' · 경로가 이어져요. 지도를 옆으로 밀어 보세요';
   else if(!st.start)msg+=' · 지도를 눌러 출발 위치를 정할 수 있어요';
@@ -796,17 +798,222 @@ function readQR(){const h=(location.hash||'').replace('#','');const qs=new URLSe
   if(QRS.some(q=>q.id===(QR_ALIAS[id]||id))){scanQR(id);return true;}return false;}
 window.addEventListener('hashchange',readQR);
 
-/* ---------- 편집 도구 ---------- */
-$('editToggle').onclick=e=>{st.edit=!st.edit;e.target.setAttribute('aria-pressed',st.edit);e.target.textContent=st.edit?'경로망 표시 끄기':'경로망 표시 켜기';draw();toast(st.edit?'편집 모드: 지도를 누르면 좌표가 기록돼요':'편집 모드 종료');};
-$('copyCoords').onclick=()=>{const t=$('coords');navigator.clipboard?.writeText(t.value).then(()=>toast('좌표를 복사했어요')).catch(()=>{t.select();});};
+/* ---------- 경로 편집 도구 (관리자 전용) ----------
+   지도 위에서 통로 점을 옮기고, 추가·연결·삭제하고, 구간마다 추가 비용을 줄 수 있어요.
+   저장: GitHub에 routes.json 으로 바로 커밋하거나, JSON을 복사·내려받아 직접 올려요. */
+const ED={mode:'select',sel:null,selEdge:null,first:null,hist:[],dirty:0,base:null};
+const DRAFT_KEY='tsgm-routes-draft',TOKEN_KEY='tsgm-gh-token';
+const PREFIX={'1F':'f1','2F':'f2','B':'fb','U':'fu'};
+const MODE_HELP={
+  select:'선택·이동 · 점을 끌어 옮기고, 점이나 선을 눌러 자세히 봐요',
+  add:'점 추가 · 빈 곳을 누르면 새 점, 선 위를 누르면 그 선을 나눠요. 선택한 점과 자동으로 이어져요',
+  link:'연결·끊기 · 두 점을 차례로 누르면 이어지고, 이미 이어져 있으면 끊겨요',
+  del:'삭제 · 점이나 선을 눌러 지워요'
+};
+function routesToText(R){const j=JSON.stringify;
+  return '{\n'+` "version": ${j(R.version)},\n "updated": ${j(R.updated)},\n "note": ${j(R.note)},\n "costs": ${j(R.costs)},\n`+
+  ' "nodes": {\n'+Object.keys(R.nodes).map(id=>`  ${j(id)}: ${j(R.nodes[id])}`).join(',\n')+'\n },\n'+
+  ' "edges": [\n'+R.edges.map(e=>'  '+j(e)).join(',\n')+'\n ],\n'+
+  ' "lifts": [\n'+R.lifts.map(l=>'  '+j(l)).join(',\n')+'\n ]\n}\n';}
+const lsGet=k=>{try{return localStorage.getItem(k);}catch(e){return null;}};
+const lsSet=(k,v)=>{try{v==null?localStorage.removeItem(k):localStorage.setItem(k,v);}catch(e){}};
+
+/* 변경 기록 · 되돌리기 */
+function beginChange(){ED.hist.push(JSON.stringify(RT));if(ED.hist.length>60)ED.hist.shift();}
+function changed(){
+  buildGraph();ED.dirty++;
+  if(ED.sel&&!N[ED.sel])ED.sel=null;if(ED.first&&!N[ED.first])ED.first=null;if(ED.selEdge!=null&&!RT.edges[ED.selEdge])ED.selEdge=null;
+  lsSet(DRAFT_KEY,JSON.stringify({base:ED.base,saved:Date.now(),data:RT}));
+  refreshRoute();draw();renderEditor();
+}
+function undo(){
+  if(!ED.hist.length){toast('되돌릴 수정이 없어요');return;}
+  RT=JSON.parse(ED.hist.pop());ED.dirty=Math.max(0,ED.dirty-2);ED.selEdge=null;changed();
+  if(!ED.dirty)lsSet(DRAFT_KEY,null);toast('한 단계 되돌렸어요');
+}
+function refreshRoute(){
+  if(!(st.start&&st.dest))return;
+  st.route=route(st.start,st.dest);
+  if(st.route)renderSteps();else{$('routeSec').hidden=true;toast('지금 경로망으로는 목적지까지 이어지지 않아요');}
+  renderTabs();
+}
+
+/* 화면 좌표 기준 찾기 */
+function nodeAt(sx,sy,r=18){let best=null,bd=r;
+  for(const id in N){if(N[id][0]!==st.panel)continue;const [x,y]=S(...xy(id));const d=Math.hypot(x-sx,y-sy);if(d<bd){bd=d;best=id;}}
+  return best;}
+function edgeAt(sx,sy,r=12){let best=null,bd=r;
+  RT.edges.forEach(([a,b],i)=>{if(!N[a]||!N[b]||N[a][0]!==st.panel||N[b][0]!==st.panel)return;
+    const A=S(...xy(a)),B=S(...xy(b)),dx=B[0]-A[0],dy=B[1]-A[1],L2=dx*dx+dy*dy||1;
+    const t=Math.max(0,Math.min(1,((sx-A[0])*dx+(sy-A[1])*dy)/L2));const d=Math.hypot(sx-A[0]-t*dx,sy-A[1]-t*dy);
+    if(d<bd){bd=d;best={i,t};}});
+  return best;}
+const edgeIndex=(a,b)=>RT.edges.findIndex(e=>(e[0]===a&&e[1]===b)||(e[0]===b&&e[1]===a));
+function newId(p){let n=1;while(N[`${PREFIX[p]}_n${n}`])n++;return `${PREFIX[p]}_n${n}`;}
+
+/* 편집 동작 */
+function addNode(p,x,y){const id=newId(p);RT.nodes[id]=[p,Math.round(x),Math.round(y)];return id;}
+function connect(a,b){if(a&&b&&a!==b&&edgeIndex(a,b)<0)RT.edges.push([a,b]);}
+function deleteNode(id){
+  RT.edges=RT.edges.filter(e=>e[0]!==id&&e[1]!==id);
+  RT.lifts.forEach(L=>L.m=L.m.filter(x=>x!==id));delete RT.nodes[id];
+  if(ED.sel===id)ED.sel=null;if(ED.first===id)ED.first=null;ED.selEdge=null;
+}
+function editTap(sx,sy,wx,wy){
+  const n=nodeAt(sx,sy);
+  if(ED.mode==='select'){
+    if(n){ED.sel=n;ED.selEdge=null;}
+    else{const e=edgeAt(sx,sy);if(e){ED.selEdge=e.i;ED.sel=null;}
+      else{ED.sel=null;ED.selEdge=null;
+        const line=`['${st.panel}', ${Math.round(wx)}, ${Math.round(wy)}]  // ${locLabel(st.panel,wx)}`;
+        st.coords.unshift(line);$('coords').value=st.coords.slice(0,30).join('\n');toast('좌표 기록: '+Math.round(wx)+', '+Math.round(wy));}}
+    draw();renderEditor();return;
+  }
+  if(ED.mode==='add'){
+    if(n){
+      if(n===ED.sel){ED.sel=null;toast('선택을 풀었어요. 다음 점은 따로 시작돼요');draw();renderEditor();return;}
+      if(ED.sel&&edgeIndex(ED.sel,n)<0){beginChange();connect(ED.sel,n);ED.sel=n;changed();toast('두 점을 이었어요');return;}
+      ED.sel=n;draw();renderEditor();return;
+    }
+    if(wx<0||wy<0||wx>PANELS[st.panel].w||wy>PANELS[st.panel].h)return;
+    beginChange();
+    const e=edgeAt(sx,sy);let id;
+    if(e){const [a,b,pen]=RT.edges[e.i];const A=xy(a),B=xy(b);
+      id=addNode(st.panel,A[0]+(B[0]-A[0])*e.t,A[1]+(B[1]-A[1])*e.t);
+      const half=pen?Math.round(pen/2):0;RT.edges.splice(e.i,1,half?[a,id,half]:[a,id],half?[id,b,half]:[id,b]);
+      if(ED.sel&&ED.sel!==a&&ED.sel!==b)connect(ED.sel,id);toast('선을 나눠 점을 넣었어요');}
+    else{id=addNode(st.panel,wx,wy);if(ED.sel)connect(ED.sel,id);toast(ED.sel?'새 점을 추가하고 이었어요':'새 점을 추가했어요');}
+    ED.sel=id;ED.selEdge=null;changed();return;
+  }
+  if(ED.mode==='link'){
+    if(!n){toast('점을 눌러 주세요');return;}
+    if(!ED.first||ED.first===n){ED.first=ED.first===n?null:n;draw();renderEditor();return;}
+    beginChange();const i=edgeIndex(ED.first,n);
+    if(i>=0){RT.edges.splice(i,1);toast('연결을 끊었어요');}else{connect(ED.first,n);toast('두 점을 이었어요');}
+    ED.first=null;changed();return;
+  }
+  if(ED.mode==='del'){
+    if(n){beginChange();deleteNode(n);changed();toast('점을 지웠어요');return;}
+    const e=edgeAt(sx,sy);if(e){beginChange();RT.edges.splice(e.i,1);ED.selEdge=null;changed();toast('선을 지웠어요');}
+  }
+}
+function setMode(m){ED.mode=m;ED.first=null;document.querySelectorAll('#edbar [data-m]').forEach(b=>b.setAttribute('aria-pressed',b.dataset.m===m));draw();updateHint();renderEditor();}
+function setEdit(on){
+  st.edit=on;$('edbar').hidden=!on;wrap.classList.toggle('editing',on);$('editToggle').setAttribute('aria-pressed',on);
+  $('editToggle').textContent=on?'편집 끄기':'편집 켜기';if(!on){ED.sel=null;ED.selEdge=null;ED.first=null;}
+  draw();updateHint();renderEditor();toast(on?'편집 모드: 지도 위 도구를 골라 수정하세요':'편집 모드 종료');
+}
+function setLift(id,v){
+  beginChange();RT.lifts.forEach(L=>L.m=L.m.filter(x=>x!==id));
+  if(v==='__new'){const name=prompt('이동수단 이름 (예: D동 26호기 엘리베이터)');
+    if(!name){ED.hist.pop();renderEditor();return;}
+    const type=confirm('엘리베이터인가요?\n확인 = 엘리베이터 · 취소 = 에스컬레이터')?'ev':'esc';
+    RT.lifts.push({id:'L'+Date.now().toString(36),name,type,m:[id]});}
+  else if(v){const L=RT.lifts.find(L=>L.id===v);
+    if(L.type==='esc'){const o=ORDER.indexOf(N[id][0]);const k=L.m.findIndex(x=>ORDER.indexOf(N[x][0])>o);k<0?L.m.push(id):L.m.splice(k,0,id);}
+    else L.m.push(id);}
+  changed();
+}
+
+/* 편집 패널 */
+function renderEditor(){
+  const ins=$('inspector');if(!ins)return;
+  $('dirtyBadge').textContent=ED.dirty?`저장 안 한 수정 ${ED.dirty}건`:'저장된 상태';
+  $('dirtyBadge').className='badge'+(ED.dirty?' warn':'');
+  $('undoBtn').disabled=$('edUndo').disabled=!ED.hist.length;
+  $('costEv').value=COSTS.ev;$('costEsc').value=COSTS.esc;
+  if(ED.sel&&N[ED.sel]){const id=ED.sel,[p,x,y]=N[id];const deg=RT.edges.filter(e=>e[0]===id||e[1]===id).length;
+    const cur=isLift[id]?isLift[id].id:'';
+    ins.innerHTML=`<b>점 ${id}</b><p class="note" style="margin:2px 0 8px">${PANELS[p].tab} 지도 · ${locLabel(p,x)} · 좌표 (${x}, ${y}) · 연결된 선 ${deg}개</p>
+      <label class="fld">층간 이동수단<select id="liftSel"><option value="">없음 (일반 통로)</option>${RT.lifts.map(L=>`<option value="${L.id}"${L.id===cur?' selected':''}>${L.name}</option>`).join('')}<option value="__new">+ 새 이동수단 만들기…</option></select></label>
+      <p class="note">같은 이동수단으로 지정한 점끼리 층을 넘어 연결돼요. 에스컬레이터는 아래층부터 한 층씩만 이어져요.</p>
+      <div class="row" style="margin-top:8px"><button class="btn" id="delNode">이 점 삭제</button></div>`;
+    $('liftSel').onchange=e=>setLift(id,e.target.value);
+    $('delNode').onclick=()=>{beginChange();deleteNode(id);changed();};
+    return;}
+  if(ED.selEdge!=null&&RT.edges[ED.selEdge]){const i=ED.selEdge,[a,b,pen]=RT.edges[i];const len=Math.round(dist(xy(a),xy(b)));
+    ins.innerHTML=`<b>통로 ${a} ↔ ${b}</b><p class="note" style="margin:2px 0 8px">실제 길이 ${len} · 계산 거리 ${len+(+pen||0)}</p>
+      <label class="fld">추가 비용<input id="penIn" type="number" min="0" step="50" value="${pen||0}"></label>
+      <p class="note">짧아도 실제로는 불편한 길(계단·혼잡 구간·문 통과)이면 값을 올리세요. 200을 넣으면 200만큼 더 먼 길로 계산해요. 지나가면 안 되는 길은 끊는 게 정확해요.</p>
+      <div class="row" style="margin-top:8px"><button class="btn" id="cutEdge">이 통로 끊기</button></div>`;
+    $('penIn').onchange=e=>{const v=Math.max(0,Math.round(+e.target.value||0));if(v===(+pen||0))return;beginChange();RT.edges[i]=v?[a,b,v]:[a,b];changed();};
+    $('cutEdge').onclick=()=>{beginChange();RT.edges.splice(i,1);ED.selEdge=null;changed();};
+    return;}
+  ins.innerHTML=`<p class="note" style="margin:0">${st.edit?MODE_HELP[ED.mode]+'.':'편집을 켜면 지도 위에 통로 경로망(파란 선)과 도구가 나타나요.'} 고객 화면처럼 출발지(QR 테스트)와 목적지(검색)를 정해 두면 고칠 때마다 경로가 바로 다시 그려져요.</p>`;
+}
+
+/* 저장: GitHub · 복사 · 내려받기 */
+function b64enc(s){const u=new TextEncoder().encode(s);let bin='';for(let i=0;i<u.length;i+=0x8000)bin+=String.fromCharCode.apply(null,u.subarray(i,i+0x8000));return btoa(bin);}
+function b64dec(s){const bin=atob(s.replace(/\s/g,''));return new TextDecoder().decode(Uint8Array.from(bin,c=>c.charCodeAt(0)));}
+function defaultRepo(){const h=location.hostname;if(h.endsWith('.github.io')){const o=h.split('.')[0];const r=location.pathname.split('/')[1]||h;return o+'/'+r;}return 'hyeonn31/triple-street-guide-map';}
+function saveStatus(html,bad){const s=$('saveStatus');s.innerHTML=html;s.style.color=bad?'var(--route)':'';}
+async function ghSave(){
+  const repo=$('ghRepo').value.trim(),token=$('ghToken').value.trim(),branch='main';
+  if(!/^[\w.-]+\/[\w.-]+$/.test(repo)){saveStatus('저장소는 "계정/저장소" 형식으로 적어 주세요.',true);return;}
+  if(!token){saveStatus('GitHub 토큰을 넣어 주세요. 아래 "토큰 만드는 법"을 참고하세요.',true);$('ghToken').focus();return;}
+  lsSet(TOKEN_KEY,$('ghRemember').checked?token:null);
+  const api=`https://api.github.com/repos/${repo}/contents/routes.json`;
+  const H={Authorization:'Bearer '+token,Accept:'application/vnd.github+json','X-GitHub-Api-Version':'2022-11-28'};
+  const btn=$('ghSave');btn.disabled=true;saveStatus('저장 중…');
+  const prev=RT.updated;
+  try{
+    let sha,remote=null;
+    const g=await fetch(`${api}?ref=${branch}&t=${Date.now()}`,{headers:H,cache:'no-store'});
+    if(g.status===401)throw new Error('토큰이 올바르지 않거나 만료됐어요.');
+    if(g.status===403)throw new Error('이 토큰에 저장소 쓰기 권한이 없어요. Contents 권한을 "Read and write"로 해 주세요.');
+    if(g.ok){const j=await g.json();sha=j.sha;try{remote=JSON.parse(b64dec(j.content)).updated;}catch(e){}}
+    else if(g.status!==404)throw new Error('저장소를 읽지 못했어요 (HTTP '+g.status+').');
+    if(remote&&ED.base&&remote!==ED.base&&!confirm(`이 화면을 연 뒤 다른 곳에서 경로가 먼저 저장됐어요 (${new Date(remote).toLocaleString('ko-KR')}).\n지금 수정본으로 덮어쓸까요?`)){saveStatus('저장을 취소했어요.');return;}
+    RT.updated=new Date().toISOString();
+    const body={message:$('ghMsg').value.trim()||'경로망 수정 (관리자 화면)',content:b64enc(routesToText(RT)),branch};if(sha)body.sha=sha;
+    const p=await fetch(api,{method:'PUT',headers:{...H,'Content-Type':'application/json'},body:JSON.stringify(body)});
+    if(!p.ok){const t=await p.json().catch(()=>({}));throw new Error((p.status===409?'동시에 다른 저장이 있었어요. 다시 눌러 주세요. ':'')+'저장하지 못했어요 (HTTP '+p.status+(t.message?' · '+t.message:'')+').');}
+    const j=await p.json();ED.base=RT.updated;ED.dirty=0;ED.hist=[];lsSet(DRAFT_KEY,null);renderEditor();
+    saveStatus(`저장했어요 · 1~2분 뒤 모든 화면에 반영돼요. <a href="${j.commit.html_url}" target="_blank" rel="noopener">변경 기록 보기</a>`);
+    toast('GitHub에 저장했어요');
+  }catch(e){RT.updated=prev;saveStatus(e.message||'네트워크 오류로 저장하지 못했어요.',true);}
+  finally{btn.disabled=false;}
+}
+function copyJSON(){const t=routesToText(RT);navigator.clipboard?.writeText(t).then(()=>toast('routes.json 내용을 복사했어요')).catch(()=>toast('복사하지 못했어요. 파일 받기를 써 주세요'));}
+function downloadJSON(){const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([routesToText(RT)],{type:'application/json'}));a.download='routes.json';a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000);}
+function checkDraft(){
+  let d=null;try{d=JSON.parse(lsGet(DRAFT_KEY)||'null');}catch(e){}
+  if(!d||!d.data||JSON.stringify(d.data)===JSON.stringify(RT))return;
+  const b=$('draftBanner');b.hidden=false;
+  $('draftTime').textContent=new Date(d.saved).toLocaleString('ko-KR');
+  $('draftLoad').onclick=()=>{beginChange();RT=d.data;ED.base=d.base||ED.base;b.hidden=true;changed();toast('저장 안 한 수정본을 불러왔어요');};
+  $('draftDrop').onclick=()=>{lsSet(DRAFT_KEY,null);b.hidden=true;toast('수정본을 버렸어요');};
+}
+function initEditor(){
+  ED.base=RT.updated;
+  $('editToggle').onclick=()=>setEdit(!st.edit);
+  document.querySelectorAll('#edbar [data-m]').forEach(b=>b.onclick=()=>setMode(b.dataset.m));
+  $('edUndo').onclick=$('undoBtn').onclick=undo;
+  $('edDone').onclick=()=>setEdit(false);
+  const setCost=(k,el)=>{const v=Math.max(0,Math.round(+el.value||0));if(v===COSTS[k])return;beginChange();RT.costs=Object.assign({},COSTS,{[k]:v});changed();};
+  $('costEv').onchange=e=>setCost('ev',e.target);$('costEsc').onchange=e=>setCost('esc',e.target);
+  $('ghRepo').value=defaultRepo();
+  const tk=lsGet(TOKEN_KEY);if(tk){$('ghToken').value=tk;$('ghRemember').checked=true;}
+  $('ghForget').onclick=()=>{lsSet(TOKEN_KEY,null);$('ghToken').value='';$('ghRemember').checked=false;toast('이 기기에서 토큰을 지웠어요');};
+  $('ghSave').onclick=ghSave;$('copyJson').onclick=copyJSON;$('dlJson').onclick=downloadJSON;
+  $('copyCoords').onclick=()=>{const t=$('coords');navigator.clipboard?.writeText(t.value).then(()=>toast('좌표를 복사했어요')).catch(()=>{t.select();});};
+  $('routeSrc').textContent=RT.__fallback?'⚠ routes.json을 불러오지 못해 예비 데이터를 쓰고 있어요':`routes.json · 마지막 저장 ${new Date(RT.updated).toLocaleString('ko-KR')}`;
+  window.addEventListener('beforeunload',e=>{if(ED.dirty){e.preventDefault();e.returnValue='';}});
+  checkDraft();setMode('select');renderEditor();
+}
 
 /* ---------- 시작 ---------- */
+async function loadRoutes(){
+  try{const r=await fetch('routes.json',{cache:'no-cache'});if(!r.ok)throw new Error(r.status);RT=await r.json();if(!RT.nodes||!RT.edges)throw new Error('format');}
+  catch(e){RT=JSON.parse(JSON.stringify(ROUTES_FALLBACK));RT.__fallback=true;}
+  buildGraph();
+}
 renderCats();renderQRSim();renderLoc();
-requestAnimationFrame(()=>{showPanel('1F');renderResults();renderQRPrint();
-  $('adminTools').hidden=!ADMIN;
-  if(!readQR()&&ADMIN){ // 관리자 모드 첫 화면 예시: QR3 → B1 다이소
+loadRoutes().then(()=>requestAnimationFrame(()=>{showPanel('1F');renderResults();renderQRPrint();
+  $('adminTools').hidden=!ADMIN;if(ADMIN)initEditor();
+  if(!readQR()&&ADMIN){ // 관리자 모드 첫 화면 예시: 2F 안내데스크 → B1 다이소
     scanQR('2f-3');setDest(poiObj(POI.find(p=>p[0]==='다이소')));}
-});
+}));
 </script>
 
 </body>
