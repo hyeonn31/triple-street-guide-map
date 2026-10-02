@@ -830,6 +830,7 @@ function renderTabs(){
 }
 function showPanel(k,focus){
   if(st.edit)closePop();
+  if(st.focus&&st.focus.p!==k)st.focus=null;
   st.panel=k;const P=PANELS[k];
   img.setAttribute('href',IMG[k]);img.setAttribute('width',P.w);img.setAttribute('height',P.h);
   renderTabs();fitDefault(focus);draw();updateHint();renderCards();renderNavFlow();
@@ -882,6 +883,8 @@ const toWorld=(cx,cy)=>{const [x,y]=toLocal(cx,cy);return [(x-st.tx)/st.s,(y-st.
 svg.addEventListener('pointerdown',e=>{svg.setPointerCapture(e.pointerId);ptrs.set(e.pointerId,{x:e.clientX,y:e.clientY});
   gesture={moved:0,t:Date.now(),multi:ptrs.size>1,x:e.clientX,y:e.clientY};
   if(st.edit)closePop();
+  clearTimeout(gesture.lp);if(!st.edit&&ptrs.size===1&&e.button!==2)gesture.lp=setTimeout(()=>{if(gesture&&!gesture.multi&&gesture.moved<6){gesture.long=true;const [wx,wy]=toWorld(e.clientX,e.clientY);longPressAt(wx,wy);}},700);
+  if(ptrs.size>1&&gesture)clearTimeout(gesture.lp);
   if(st.edit&&!ED.drawing&&ptrs.size===1){const [lx,ly]=toLocal(e.clientX,e.clientY);const n=nodeAt(lx,ly);if(n){gesture.drag=n;gesture.snap=JSON.stringify(RT);}}});
 svg.addEventListener('pointermove',e=>{if(!ptrs.has(e.pointerId))return;const p=ptrs.get(e.pointerId);
   if(ptrs.size===1&&gesture&&gesture.drag){gesture.moved+=Math.abs(e.clientX-p.x)+Math.abs(e.clientY-p.y);p.x=e.clientX;p.y=e.clientY;
@@ -892,7 +895,8 @@ svg.addEventListener('pointermove',e=>{if(!ptrs.has(e.pointerId))return;const p=
   p.x=e.clientX;p.y=e.clientY;});
 function endPtr(e){if(!ptrs.has(e.pointerId))return;ptrs.delete(e.pointerId);
   if(gesture&&gesture.drag&&gesture.moved>=8){const id=gesture.drag;ED.hist.push({d:gesture.snap,n:ED.log.length});if(ED.hist.length>60)ED.hist.shift();changed(`${tabOf(N[id][0])} · ${nodeName(id)} 점 위치 옮김`);gesture=null;return;}
-  if(ptrs.size===0&&gesture&&!gesture.multi&&gesture.moved<8&&Date.now()-gesture.t<600){tap(...toLocal(e.clientX,e.clientY));}
+  if(gesture)clearTimeout(gesture.lp);
+  if(ptrs.size===0&&gesture&&!gesture.multi&&!gesture.long&&gesture.moved<8&&Date.now()-gesture.t<(st.edit?600:450)){tap(...toLocal(e.clientX,e.clientY));}
   if(ptrs.size===0)gesture=null;}
 svg.addEventListener('pointerup',endPtr);svg.addEventListener('pointercancel',endPtr);
 svg.addEventListener('wheel',e=>{e.preventDefault();if(st.edit)closePop();zoomAt(e.deltaY<0?1.15:1/1.15,...toLocal(e.clientX,e.clientY));},{passive:false});
@@ -1029,7 +1033,7 @@ function cardList(){
 function renderCards(force){
   const key=(st.chip?'c:'+st.chip:'p:'+st.panel)+'|'+(st.pickPlace?st.pickPlace.x+','+st.pickPlace.y:'')+'|'+PLACES.length;
   if(key===cardsKey&&!force)return;cardsKey=key;
-  const box=$('cards');cardsArr=cardList();box.innerHTML='';box.scrollLeft=0;
+  const box=$('cards');cardsUser=false;cardsArr=cardList();box.innerHTML='';box.scrollLeft=0;
   if(!cardsArr.length){box.innerHTML='<div class="card empty">이 층에 표시할 곳이 없어요</div>';return;}
   cardsArr.forEach((pl,i)=>{
     const c=document.createElement('article');c.className='card';c.dataset.i=i;
@@ -1051,13 +1055,15 @@ function scrollToCard(pl){const i=cardsArr.indexOf(pl);if(i<0)return;const c=doc
 function focusPlace(pl,o={}){
   st.focus=pl;
   if(pl.p!==st.panel){st.panel=pl.p;showPanel(pl.p);}
-  const b=box(),P=PANELS[pl.p];st.s=Math.max(st.s,Math.min(b.h/P.h,1)*1.25);
-  centerOn(pl.x,pl.y);st.ty-=18;clamp();draw();markCard();
+  const b=box(),P=PANELS[pl.p];
+  if(o.pan==='ifHidden'){const [x,y]=S(pl.x,pl.y);if(x<40||x>b.w-40||y<210||y>b.h-200){centerOn(pl.x,pl.y);st.ty-=18;clamp();}}
+  else{st.s=Math.max(st.s,Math.min(b.h/P.h,1)*1.25);centerOn(pl.x,pl.y);st.ty-=18;clamp();}
+  draw();markCard();
   if(o.scroll){cardsUser=false;scrollToCard(pl);}
 }
 (()=>{const box=$('cards');let t;
   ['pointerdown','touchstart','wheel'].forEach(ev=>box.addEventListener(ev,()=>{cardsUser=true;},{passive:true}));
-  box.addEventListener('scroll',()=>{clearTimeout(t);t=setTimeout(()=>{if(!cardsUser||!cardsArr.length)return;
+  box.addEventListener('scroll',()=>{clearTimeout(t);t=setTimeout(()=>{if(!cardsUser||!cardsArr.length)return;cardsUser=false;
     const mid=box.scrollLeft+box.clientWidth/2;let best=0,bd=1e9;
     box.querySelectorAll('.card').forEach(c=>{const d=Math.abs(c.offsetLeft+c.offsetWidth/2-mid);if(d<bd){bd=d;best=+c.dataset.i;}});
     const pl=cardsArr[best];if(pl&&pl!==st.focus)focusPlace(pl);},140);},{passive:true});})();
@@ -1229,10 +1235,18 @@ function customerTap(sx,sy,wx,wy){
     if(st.pick==='start'&&!rf.dest)rf.active='dest';else if(st.pick==='dest'&&!rf.start)rf.active='start';
     endPick(true);return;}
   if(st.nav)return;
-  let best=null,bd=34;PLACES.forEach(pl=>{if(pl.p!==st.panel||pl.lift)return;const [x,y]=S(pl.x,pl.y);const d=Math.hypot(x-sx,y-sy);if(d<bd){bd=d;best=pl;}});
-  if(!best){best={name:'선택한 위치',p:st.panel,x:wx,y:wy,cat:'pick'};st.pickPlace=best;if(st.chip){st.chip=null;renderChips();}renderCards();}
-  else if(st.chip&&!matchChip(best,st.chip)){st.chip=null;renderChips();renderCards();}
-  focusPlace(best,{scroll:true});
+  let best=null,bd=26;PLACES.forEach(pl=>{if(pl.p!==st.panel||pl.lift)return;const [x,y]=S(pl.x,pl.y);const d=Math.hypot(x-sx,y-sy);if(d<bd){bd=d;best=pl;}});
+  if(!best){ // 빈칸: 선택만 풀고 지도는 그대로
+    if(st.focus||st.pickPlace){st.focus=null;if(st.pickPlace){st.pickPlace=null;renderCards();}markCard();draw();}
+    return;}
+  if(st.chip&&!matchChip(best,st.chip)){st.chip=null;renderChips();renderCards();}
+  focusPlace(best,{scroll:true,pan:'ifHidden'});
+}
+function longPressAt(wx,wy){ // 길게 누르기: 매장이 없는 곳도 출발·도착으로 고를 수 있게
+  const P=PANELS[st.panel];if(st.nav||st.pick||st.edit||wx<0||wy<0||wx>P.w||wy>P.h)return;
+  const pl={name:locLabel(st.panel,wx)+' 선택한 위치',p:st.panel,x:wx,y:wy,cat:'pick'};st.pickPlace=pl;
+  if(st.chip){st.chip=null;renderChips();}renderCards();focusPlace(pl,{scroll:true,pan:'ifHidden'});
+  if(navigator.vibrate)try{navigator.vibrate(15);}catch(e){}
 }
 function drawPin(pl,color,label){
   const [x,y]=S(pl.x,pl.y);const g=el('g',{transform:`translate(${x} ${y})`},overlay);
