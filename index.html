@@ -1006,7 +1006,7 @@ function compute(){
   st.route=route(st.start,st.dest,st.mode);
   if(!st.route&&st.mode!=='best'){st.mode='best';st.route=route(st.start,st.dest);toast('고른 이동수단으로는 갈 수 없어서 추천경로로 안내해요');}
   if(!st.route){toast('이 위치로 가는 경로를 찾지 못했어요');return;}
-  const multi=st.route.steps.some(s=>s.kind==='lift');
+  const multi=st.route.steps.some(s=>s.kind==='lift');cardsUser=false;
   if(!st.edit){st.nav=true;st.focus=null;document.body.classList.add('nav');closeAllSheets();}
   renderSteps();showPanel(st.start.p);
   toast(multi?'다른 층으로 이어지는 경로예요':'경로를 표시했어요');
@@ -1076,7 +1076,7 @@ function focusPlace(pl,o={}){
 }
 (()=>{const box=$('cards');let t;
   ['pointerdown','touchstart','wheel'].forEach(ev=>box.addEventListener(ev,()=>{cardsUser=true;},{passive:true}));
-  box.addEventListener('scroll',()=>{clearTimeout(t);t=setTimeout(()=>{if(!cardsUser||!cardsArr.length)return;cardsUser=false;
+  box.addEventListener('scroll',()=>{clearTimeout(t);t=setTimeout(()=>{if(!cardsUser||!cardsArr.length||!box.offsetParent||st.nav)return;cardsUser=false;
     const mid=box.scrollLeft+box.clientWidth/2;let best=0,bd=1e9;
     box.querySelectorAll('.card').forEach(c=>{const d=Math.abs(c.offsetLeft+c.offsetWidth/2-mid);if(d<bd){bd=d;best=+c.dataset.i;}});
     const pl=cardsArr[best];if(pl&&pl!==st.focus)focusPlace(pl);},140);},{passive:true});})();
@@ -1107,8 +1107,9 @@ function openModeDlg(){
 }
 function exitNav(){
   stopWalk();st.nav=false;document.body.classList.remove('nav');
-  st.route=null;st.dest=null;st.mode='best';st.start=st.here;
+  st.route=null;st.dest=null;st.mode='best';st.start=st.here;st.focus=null;st.pickPlace=null;
   renderTabs();showPanel(st.here?st.here.p:st.panel,st.here?[st.here.x,st.here.y]:null);
+  renderCards(true); // 카드 줄을 다시 그리고 내 위치 근처 매장으로 맞춤
 }
 function renderSteps(){ // 길 안내 카드
   if(!st.route)return;
@@ -1233,7 +1234,9 @@ function setTilt(on){st.tilt=on;svg.classList.toggle('tilt',on);$('f3d').textCon
 $('fWalk').onclick=startWalk;
 $('f3d').onclick=()=>setTilt(!st.tilt);
 $('fHere').onclick=()=>{stopWalk();if(!st.here){toast('가까운 안내 QR을 스캔하면 내 위치가 보여요');return;}
-  if(st.panel!==st.here.p)showPanel(st.here.p);const b=box(),P=PANELS[st.here.p];st.s=Math.max(st.s,Math.min(b.h/P.h,1)*1.25);centerOn(st.here.x,st.here.y);draw();};
+  st.focus=null;st.pickPlace=null;if(st.chip){st.chip=null;renderChips();}
+  if(st.panel!==st.here.p)showPanel(st.here.p);const b=box(),P=PANELS[st.here.p];st.s=Math.max(st.s,Math.min(b.h/P.h,1)*1.25);centerOn(st.here.x,st.here.y);draw();
+  renderCards(true);}; // 내 위치 근처 매장 카드를 가운데로
 $('herePill').onclick=()=>$('fHere').onclick();
 $('fIn').onclick=()=>{const b=box();zoomAt(1.35,b.w/2,b.h/2);};
 $('fOut').onclick=()=>{const b=box();zoomAt(1/1.35,b.w/2,b.h/2);};
