@@ -11,7 +11,9 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Black+Han+Sans&family=Noto+Sans+KR:wght@400;500;700;800&display=swap">
-<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<!-- 보안 정책: 이 페이지는 자기 파일, 구글 글꼴, GitHub 저장 API에만 연결할 수 있어요 -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob:; connect-src 'self' https://api.github.com; object-src 'none'; base-uri 'none'; form-action 'none'">
+<meta name="referrer" content="strict-origin-when-cross-origin">
 <style>
 /* Layout: 지도가 화면 전체를 채우고, 검색창·층 선택·매장 카드가 지도 위에 떠 있는 길찾기 화면 (경로 수정 화면은 별도 배치) */
 :root{
@@ -1274,11 +1276,17 @@ function drawPin(pl,color,label){
 
 /* ---------- QR ---------- */
 function renderQRSim(){const g=$('qrsim');QRS.forEach(q=>{const b=document.createElement('button');
-  b.innerHTML=`<b>${qrCode(q)}</b><span>${q.name}<br>${q.desc}</span>`;b.onclick=()=>{closeSheet('scAdmin');showPanel(q.p);scanQR(q.id);};g.appendChild(b);});}
+  b.innerHTML=`<b>${qrCode(q)}</b><span>${esc(q.name)}<br>${esc(q.desc)}</span>`;b.onclick=()=>{closeSheet('scAdmin');showPanel(q.p);scanQR(q.id);};g.appendChild(b);});}
+let qrLib=null;
+function loadQRLib(){ // 관리자 화면에서만 불러와요 (고객 화면은 이 파일을 받지 않아요)
+  if(!qrLib)qrLib=new Promise((ok,no)=>{const sc=document.createElement('script');sc.src='vendor/qrcode.min.js';sc.onload=ok;sc.onerror=no;document.head.appendChild(sc);});
+  return qrLib;
+}
 function renderQRPrint(){
+  if(typeof QRCode==='undefined'){loadQRLib().then(renderQRPrint).catch(()=>{$('qrprint').innerHTML='<p class="note">QR 도구를 불러오지 못했어요. 새로고침해 주세요.</p>';});return;}
   const base=($('baseUrl').value.trim()||location.href.split('#')[0].split('?')[0]);const g=$('qrprint');g.innerHTML='';
   QRS.forEach(q=>{const url=base+'#'+q.id;const card=document.createElement('div');card.className='qrcard';
-    card.innerHTML=`<div class="q"></div><b>${qrCode(q)} · ${q.name}</b><small>${url}</small>`;g.appendChild(card);
+    card.innerHTML=`<div class="q"></div><b>${qrCode(q)} · ${esc(q.name)}</b><small>${esc(url)}</small>`;g.appendChild(card);
     try{new QRCode(card.querySelector('.q'),{text:url,width:240,height:240,correctLevel:QRCode.CorrectLevel.M});}catch(e){card.querySelector('.q').textContent='QR 라이브러리를 불러오지 못했어요';}});
 }
 let qrT;$('baseUrl').addEventListener('input',()=>{clearTimeout(qrT);qrT=setTimeout(renderQRPrint,400);});
@@ -1301,7 +1309,7 @@ function routesToText(R){const j=JSON.stringify;
   ' "lifts": [\n'+R.lifts.map(l=>'  '+j(l)).join(',\n')+'\n ]\n}\n';}
 const lsGet=k=>{try{return localStorage.getItem(k);}catch(e){return null;}};
 const lsSet=(k,v)=>{try{v==null?localStorage.removeItem(k):localStorage.setItem(k,v);}catch(e){}};
-const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
 /* 사람이 읽는 이름 */
 const tabOf=p=>PANELS[p].tab;
@@ -1359,7 +1367,7 @@ function showPop(sx,sy,title,sub,actions){
   const p=$('edPop');p.innerHTML=`<b>${esc(title)}</b>${sub?`<small>${sub}</small>`:''}<div class="pop-acts"></div>`;
   const box=p.querySelector('.pop-acts');
   p.classList.remove('long');
-  actions.forEach(a=>{const b=document.createElement('button');b.className='pop-btn'+(a.kind?' '+a.kind:'');b.title=a.desc||'';b.innerHTML=`<span class="pi">${a.icon}</span><b>${a.label}</b>`;b.onclick=()=>{a.fn();};box.appendChild(b);});
+  actions.forEach(a=>{const b=document.createElement('button');b.className='pop-btn'+(a.kind?' '+a.kind:'');b.title=a.desc||'';b.innerHTML=`<span class="pi">${a.icon}</span><b>${esc(a.label)}</b>`;b.onclick=()=>{a.fn();};box.appendChild(b);});
   const c=document.createElement('button');c.className='pop-x';c.setAttribute('aria-label','닫기');c.textContent='✕';c.onclick=()=>{closePop();ED.sel=null;ED.selEdge=null;draw();};p.appendChild(c);
   p.hidden=false;const W=wrap.clientWidth,H=wrap.clientHeight,w=p.offsetWidth,h=p.offsetHeight;
   let x=Math.max(8,Math.min(W-w-8,sx-w/2)),y=sy+26;if(y+h>H-8)y=sy-h-26;if(y<8)y=Math.max(8,Math.min(H-h-8,sy+26));
@@ -1634,7 +1642,7 @@ async function loadRoutes(){
   buildGraph();
 }
 renderChips();renderQRSim();renderLoc();
-loadRoutes().then(()=>requestAnimationFrame(()=>{buildPlaces();showPanel('1F');renderQRPrint();
+loadRoutes().then(()=>requestAnimationFrame(()=>{buildPlaces();showPanel('1F');if(ADMIN)renderQRPrint();
   $('openAdmin').hidden=!ADMIN;if(ADMIN)initEditor();
   if(!readQR()&&ADMIN)scanQR('2f-3'); // 관리자 모드 첫 화면 예시: C동 2F 안내데스크
 }));
