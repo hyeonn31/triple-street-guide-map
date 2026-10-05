@@ -879,7 +879,8 @@ function pads(){
   if(st.edit)return [0,0];
   const r=wrap.getBoundingClientRect(),tp=$('cxTop'),bt=st.nav?$('navCard'):$('cards');
   const top=st.nav?72:(tp&&tp.offsetParent?tp.getBoundingClientRect().bottom-r.top:0);
-  const bot=bt&&bt.offsetParent?r.bottom-bt.getBoundingClientRect().top:0;
+  let bot=bt&&bt.offsetParent?r.bottom-bt.getBoundingClientRect().top:0;
+  if(!st.nav&&bt&&bt.offsetParent&&!bt.children.length)bot=Math.max(bot,(parseFloat(getComputedStyle(document.body).getPropertyValue('--cards-h'))||124)+28); // 카드가 그려지기 전에도 카드 높이만큼 비워 둠
   document.body.style.setProperty('--top-h',Math.round(top)+'px');document.body.style.setProperty('--bottom-h',Math.round(bot)+'px');
   return [top+8,bot+8];
 }
@@ -1685,7 +1686,7 @@ function initEditor(){
 }
 
 /* ---------- 처음 방문 안내: 화면을 짚어 가며 한 단계씩 (터치하면 다음) ---------- */
-const COACH_KEY='tsgm-guide-v1';let CO=null;
+const COACH_KEY='tsgm-guide-v2';let CO=null;
 function coachSteps(){
   const r=wrap.getBoundingClientRect(),el=id=>{const e=$(id);return e&&e.offsetParent?e.getBoundingClientRect():null;};
   const union=(a,b)=>a&&b?{left:Math.min(a.left,b.left),top:Math.min(a.top,b.top),right:Math.max(a.right,b.right),bottom:Math.max(a.bottom,b.bottom)}:a||b;
